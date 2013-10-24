@@ -1,14 +1,12 @@
 #!/bin/bash
 #
-# Jupiter installation script
+# General installation script
 #
 # 1) Change Hostname: Ask for it or $1
-# 2) Create users
-# 3) Installs public key(s)
-# 4) Lock root
-# 5) Set sshd_config/PermitRootLogin to withoutpassword
-# 6) Install MariaDB repositories
-# 7) END OK
+# 2) Create users and public keys
+# 3) Lock root
+# 4) Set sshd_config/PermitRootLogin to withoutpassword
+# 5) END OK
 
 DRY_RUN=1
 VERBOSE=1
@@ -19,7 +17,6 @@ HOSTNAME="`hostname`"
 SUDO="`which sudo`"
 SUDOERS=("max13")
 SUDOERS_FILE="/etc/sudoers"
-SUDOERS_WA_FILE="/etc/sudoers.d/waagent"
 SYS_USERS=(`cat "/etc/passwd" | cut -d: -f1 | tr "\n" " "`)
 PUB_KEYS=("http://pastebin.com/raw.php?i=qxWwwmgW")
 SSHD_CONF="/etc/ssh/sshd_config"
@@ -199,5 +196,22 @@ Z=$?
 echo " OK"
 # ---
 
-echo "Finished"
+# Set PermitRootLogin to "without-password"
+echo -n "Allowing root login with pubkey only: "
+echo -n "."
+if [ -z "$DRY_RUN" ]; then
+    Z=`tempfile` > /dev/null 2>&1 || end_script "($?) Can't create temp file for root login" $LINENO
+    echo -n "."
+    cp "$SSHD_CONF" "$Z" > /dev/null 2>&1 || end_script "($?) Can't copy temp file for root login" $LINENO
+    echo -n "."
+    cat "$Z" | sed "s/PermitRootLogin.*$/PermitRootLogin\twithout-password/" | sed "s/PubkeyAuthentication.*/PubkeyAuthentication\tyes/" > "$SSHD_CONF"
+    echo -n "."
+else
+    true
+fi
+[ $? != 0 ] && end_script "($?) Can't rewrite sshd_config file" $LINENO
+echo " OK"
+# ---
+
+echo "FINISHED !"
 exit 0
