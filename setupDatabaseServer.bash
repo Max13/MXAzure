@@ -1,13 +1,13 @@
 #!/bin/bash
 #
-# General installation script
+# MariaDB installation script
 #
 # 0) Sanity setup check
-# 1) Change Hostname: Ask for it or $1
-# 2) Create users and public keys
-# 3) Lock root
-# 4) Set sshd_config/PermitRootLogin to withoutpassword
-# 5) Create temp file to know general setup as been finished
+# 1) Determine Aptitude or Yum directory
+# 2) Add Maria DB GPG Key
+# 3) Create MariaDB file in repo man directory
+# 4) REPO update
+# 5) Print package names
 # 6) END OK
 
 DRY_RUN=1
@@ -15,14 +15,14 @@ LAST_ERROR=
 VERBOSE=1
 Z=
 
-HOSTNAME="`hostname`"
-PUB_KEYS=("https://raw.github.com/Max13/Max13/master/Max13.pub")
 SETUP_FILE=".MXGeneralSetup"
-SSHD_CONF="/etc/ssh/sshd_config"
+HOSTNAME="`hostname`"
 SUDO="`which sudo`"
 SUDOERS=("max13")
 SUDOERS_FILE="/etc/sudoers"
 SYS_USERS=(`cat "/etc/passwd" | cut -d: -f1 | tr "\n" " "`)
+PUB_KEYS=("http://pastebin.com/raw.php?i=qxWwwmgW")
+SSHD_CONF="/etc/ssh/sshd_config"
 #APT_FILE="/etc/apt/sources.list.d/MariaDB.list"
 #APT_CONT="# MariaDB 5.5 repository list - created `date "+%Y-%m-%d %H:%M"`\n# http://mariadb.org/mariadb/repositories/\ndeb http://ftp.igh.cnrs.fr/pub/mariadb/repo/5.5/ubuntu raring main\ndeb-src http://ftp.igh.cnrs.fr/pub/mariadb/repo/5.5/ubuntu raring main"
 
