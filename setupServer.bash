@@ -23,8 +23,6 @@ SUDO="`which sudo`"
 SUDOERS=("max13")
 SUDOERS_FILE="/etc/sudoers"
 SYS_USERS=(`cat "/etc/passwd" | cut -d: -f1 | tr "\n" " "`)
-#APT_FILE="/etc/apt/sources.list.d/MariaDB.list"
-#APT_CONT="# MariaDB 5.5 repository list - created `date "+%Y-%m-%d %H:%M"`\n# http://mariadb.org/mariadb/repositories/\ndeb http://ftp.igh.cnrs.fr/pub/mariadb/repo/5.5/ubuntu raring main\ndeb-src http://ftp.igh.cnrs.fr/pub/mariadb/repo/5.5/ubuntu raring main"
 
 # Help
 if [ "$1" == "-h" ] || [ "$1" == "--help" ]; then
@@ -79,7 +77,7 @@ check_sanity() {
     # Create clean installation file
     if [ -z "$DRY_RUN" ]; then
         echo -n > "$HOME/$SETUP_FILE"
-        if [ ! -s "$HOME/$SETUP_FILE" ]; then
+        if [ -s "$HOME/$SETUP_FILE" ]; then
             LAST_ERROR="Can't create installation file..."
             return $LINENO
         fi
