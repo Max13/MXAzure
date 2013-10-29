@@ -12,23 +12,41 @@
 
 DRY_RUN=1
 LAST_ERROR=
+LSB_RELEASE="`which lsb_release 2>/dev/null`"
 VERBOSE=1
 Z=
 
-SETUP_FILE=".MXGeneralSetup"
-HOSTNAME="`hostname`"
-SUDO="`which sudo`"
-SUDOERS=("max13")
-SUDOERS_FILE="/etc/sudoers"
-SYS_USERS=(`cat "/etc/passwd" | cut -d: -f1 | tr "\n" " "`)
-PUB_KEYS=("http://pastebin.com/raw.php?i=qxWwwmgW")
-SSHD_CONF="/etc/ssh/sshd_config"
-#APT_FILE="/etc/apt/sources.list.d/MariaDB.list"
-#APT_CONT="# MariaDB 5.5 repository list - created `date "+%Y-%m-%d %H:%M"`\n# http://mariadb.org/mariadb/repositories/\ndeb http://ftp.igh.cnrs.fr/pub/mariadb/repo/5.5/ubuntu raring main\ndeb-src http://ftp.igh.cnrs.fr/pub/mariadb/repo/5.5/ubuntu raring main"
+SETUP_FILE=".MXMariaDBSetup"
+SUPPORTED_OS=("CentOS 5" "CentOS 6" "Debian 6" "Debian 7" "Ubuntu 13")
+SUPPORTED_ARCH=("32" "64")
+SUPPORTED_MDB=("5.5" "10.0")
+APT_FILE="/etc/apt/sources.list.d/MariaDB.list"
+APT_CONTENT="# MariaDB %MDB_VERSION% repository list - created on `date "+%Y-%m-%d %H:%M"`\n# http://mariadb.org/mariadb/repositories/\ndeb http://ftp.igh.cnrs.fr/pub/mariadb/repo/%MDB_VERSION%/%MDB_OS_NAME% %MDB_OS_CODENAME% main\ndeb-src http://ftp.igh.cnrs.fr/pub/mariadb/repo/%MDB_VERSION%/%MDB_OS_NAME% %MDB_OS_CODENAME% main"
+APT_GPG_CMD="apt-key adv --recv-keys --keyserver keyserver.ubuntu.com 0xcbcb082a1bb943db"
+YUM_FILE="/etc/yum.repos.d/MadiaDB.repo"
+YUM_CONTENT="# MariaDB %MDB_VERSION% CentOS repository list - created on `date "+%Y-%m-%d %H:%M"`\n# http://mariadb.org/mariadb/repositories/\n[mariadb]\nname = MariaDB\nbaseurl = http://yum.mariadb.org/%MDB_VERSION%/%MDB_OS_NAME%%MDB_OS_VERSION%-%MDB_OS_ARCH%\ngpgkey=https://yum.mariadb.org/RPM-GPG-KEY-MariaDB\ngpgcheck=1"
+CURRENT_OS_NAME=
+CURRENT_OS_CODENAME=
+CURRENT_OS_VERSION=
+CURRENT_OS_ARCH=
+MDB_VERSION=
 
 # Help
 if [ "$1" == "-h" ] || [ "$1" == "--help" ]; then
-    echo "Usage: `basename $0` [-h | --help] [hostname]"
+    echo -e "\tUsage: `basename $0` [-h | --help | -l]"
+    echo
+    echo -e "\t-l\tList supported OS"
+    echo
+    exit 0
+fi
+# ---
+
+# List
+if [ "$1" == "-l" ]; then
+    echo "Supported OS:"
+    for (( i=0, n=${#SUPPORTED_OS[@]}; i<$n; i++ )); do
+        echo -e "\t- ${SUPPORTED_OS[$i]}"
+    done
     echo
     exit 0
 fi
@@ -42,7 +60,7 @@ echo -e " !\n"
 
 # Functions definitions
 end_script() { # (string error)
-    if [ -n "$VERBOSE" ]; then
+if [ -n "$VERBOSE" ]; then
         echo -en "\n\t" # echo -en "\nLast error: "
         if [ -z "$1" ]; then
             echo -e "$LAST_ERROR"
@@ -58,28 +76,68 @@ end_script() { # (string error)
     fi
 }
 
+init_os_info() {
+    CURRENT_OS_ARCH="`getconf LONG_BIT`"
+    local LSB_RELEASE="`which lsb_release`"
+    local OS_RELEASE_FILE="`ls -1 /etc/*-release 2>/dev/null | head -n1`"
+    local OS_COMPLETE_NAME=
+    local OS_SUPPORTED=0
+
+    echo -n "."
+    if [ -n "$LSB_RELEASE" ]; then          # Debian based ?
+        CURRENT_OS_NAME="`$LSB_RELEASE -is`"
+        CURRENT_OS_VERSION="`$LSB_RELEASE -rs`"
+        CURRENT_OS_CODENAME="`$LSB_RELEASE -cs`"
+    elif [ -r "$OS_RELEASE_FILE" ]; then    # Redhat based ?
+        local readonly CURRENT_OS_RELEASE="`head -n1 $OS_RELEASE_FILE`"
+        CURRENT_OS_NAME="`echo $CURRENT_OS_RELEASE | cut -d' ' -f1`"
+        CURRENT_OS_VERSION="`echo $CURRENT_OS_RELEASE | cut -d' ' -f3`"
+        unset CURRENT_OS_CODENAME
+    else                                    # Not supported >_>'
+        LAST_ERROR="Unsupported OS"
+        return $LINENO
+    fi
+
+    echo -n "."
+    for (( i=0, n=${#SUPPORTED_ARCH[@]}; i<$n; i++ )); do
+        if [ "${SUPPORTED_ARCH[$i]}" == "$CURRENT_OS_ARCH" ]; then
+            OS_SUPPORTED=1
+            break
+        fi
+    done
+    [ $OS_SUPPORTED == 0 ] && LAST_ERROR="Arch unsupported" && return $LINENO
+    OS_SUPPORTED=0
+
+    echo -n "."
+    for (( i=0, n=${#SUPPORTED_OS[@]}; i<$n; i++ )); do
+        if [ "${SUPPORTED_OS[$i]}" == "$CURRENT_OS_NAME `echo $CURRENT_OS_VERSION | cut -d. -f1`" ]; then
+            OS_SUPPORTED=1
+            break
+        fi
+    done
+    [ $OS_SUPPORTED == 0 ] && LAST_ERROR="OS unsupported" && return $LINENO
+
+    CURRENT_OS_NAME=`echo "$CURRENT_OS_NAME" | tr "[:upper:]" "[:lower:]"`
+
+    return 0
+}
+
 check_sanity() {
     # Check if root (correct $HOME)
     [ "`whoami`" != "root" ] && LAST_ERROR="This script must be run as root (or with 'sudo -H ...')" && return $LINENO
-    [ -n "$SUDO_USER" ] && [ "$HOME" == "`sudo -Hu \"$SUDO_USER\" env | grep HOME | sed \"s/HOME=//\"`" ] && LAST_ERROR="Wrong \$HOME path\nIt seems you didn't invoke sudo with the \"-H\" option...\nYou silly !" && return $LINENO
-    # ---
-
-    # Check env
-    [ -z "$HOME" ] && LAST_ERROR="Missing '$HOME' env variable." && return $LINENO
-    [ -z "`which sudo`" ] && LAST_ERROR="Missing sudo excecutable,\nmake sure it's installed." && return $LINENO
     # ---
 
     # Check if already set-up
     if [ -r "$HOME/$SETUP_FILE" ] && [ -s "$HOME/$SETUP_FILE" ]; then
-        LAST_ERROR="This server has already been set-up on \"`cat $HOME/$SETUP_FILE`\".\nTo force it, please remove the file \"$HOME/$SETUP_FILE\" and restart this script"
+        LAST_ERROR="This server has already been set-up on \"`cat $HOME/$SETUP_FILE`\".\n\tTo force it, please remove the file \"$HOME/$SETUP_FILE\" and restart this script"
         return $LINENO
     fi
     # ---
 
     # Create clean installation file
     if [ -z "$DRY_RUN" ]; then
-        echo -n > "$HOME/$SETUP_FILE"
-        if [ ! -s "$HOME/$SETUP_FILE" ]; then
+        echo -n > "$HOME/$SETUP_FILE" 2>/dev/null
+        if [ -s "$HOME/$SETUP_FILE" ]; then
             LAST_ERROR="Can't create installation file..."
             return $LINENO
         fi
@@ -89,111 +147,39 @@ check_sanity() {
     return 0
 }
 
-set_hostname() { # (string hostname)
-    [ -z "$1" ] && end_script "No hostname given." $LINENO
+select_maria_version() {
+    echo -e "Please select the version of MariaDB\nyou want to install:\n"
 
-    echo -n "."
-    if [ -z "$DRY_RUN" ]; then
-        host "$1" > /dev/null 2>&1 || end_script "$1: ($?) Seems to be a wrong hostname."  $LINENO
-    fi
-    
-    echo -n "."
-    [ -z "$DRY_RUN" ] && hostname "$1" > /dev/null 2>&1 && [ "`hostname`" != "$1" ] && end_script "Can't set hostname"  $LINENO
+    PS3="Choice: "
+    select VERSION in ${SUPPORTED_MDB[@]}; do
+        [ -n "$VERSION" ] && break
+    done
+    MDB_VERSION="$VERSION"
 
-    echo -n "."
-    [ -z "$DRY_RUN" ] && [ -w "/etc/hostname" ] && echo "$1" > "/etc/hostname"
-
-    echo -n " "
     return 0
 }
 
-new_user_as_sudo() { # (string username, string pubkey-url)
-    ( [ -z "$1" ] || [ -z "$2" ] ) && end_script "Missing username or pubkey URL"  $LINENO
-
-    # Find and add user
-    echo -n "- $1: ."
-    echo "${SYS_USERS[@]}" | grep "$1" > /dev/null 2>&1
-    if [ $? != 0 ]; then
+write_repo_file() {
+    # Determine Packet Manager
+    echo -n "."
+    if [ -x "`which apt-get 2>/dev/null`" ]; then
         if [ -z "$DRY_RUN" ]; then
-            useradd -G "sudo" -m -U "$1" > /dev/null 2>&1
-        else
-            true
+            echo -e "$APT_CONTENT" | sed "s/%MDB_VERSION%/$MDB_VERSION/g" | sed "s/%MDB_OS_NAME%/$CURRENT_OS_NAME/g" | sed "s/%MDB_OS_CODENAME%/$CURRENT_OS_CODENAME/g" > "$APT_FILE"
+            [ $? != 0 ] && LAST_ERROR="Can't write APT file" && return $LINENO
+            ($APT_GPG_CMD > /dev/null 2>&1) || (LAST_ERROR="Can't add GPG key" && return $LINENO)
         fi
-    fi
-    Z=$?
-    [ $Z != 0 ] && end_script "($Z) Can't create user"  $LINENO
-    unset Z
-    # ---
-
-    # Add user in sudo group
-    echo -n "."
-    if [ -z "$DRY_RUN" ]; then
-        usermod -G "sudo" -a "$SUDOERS[$i]" > /dev/null 2>&1
-    else
-        true
-    fi
-    Z=$?
-    [ $Z != 0 ] && end_script "($Z) Can't add user in sudo group"  $LINENO
-    # ---
-
-    # Create user and root .ssh directories
-    echo -n "."
-    if [ -z "$DRY_RUN" ]; then
-        sudo -Hu "$1" mkdir -p "/home/$1/.ssh"
-    else
-        true
-    fi
-    [ $? != 0 ] && end_script "Can't create user .ssh dir"
-
-    echo -n "."
-    if [ -z "$DRY_RUN" ]; then
-        mkdir -p "$HOME/.ssh"
-    else
-        true
-    fi
-    [ $? != 0 ] && end_script "Can't create root .ssh dir"
-    # ---
-
-    # Create user and root authorized file
-    echo -n "."
-    if [ -z "$DRY_RUN" ]; then
-        sudo -Hu "$1" touch -p "/home/$1/.ssh/authorized_keys2"
-    else
-        true
-    fi
-    [ $? != 0 ] && end_script "Can't touch user authorized_keys2 file"
-
-    echo -n "."
-    if [ -z "$DRY_RUN" ]; then
-        touch -p "$HOME/.ssh/authorized_keys2"
-    else
-        true
-    fi
-    [ $? != 0 ] && end_script "Can't touch root authorized_keys2 file"
-    # ---
-
-    # Download and write pub key
-    echo -n "."
-    if [ -z "$DRY_RUN" ]; then
-        Z=$(tempfile) || end_script "($?) Can't create tempfile" $LINENO
-        wget -qO- "$2" > "$Z" || end_script "($?) Can't download pub key" $LINENO
-        ssh-keygen -l -f "$Z" > /dev/null 2>&1 || rm "$Z" || end_script "($?) Not a valid pub key" $LINENO
-
-        echo -n "."
-        grep "`cat \"$Z\" | sed 's/^[ ]//g' | sed 's/[ ]$//g'`" "/home/$1/.ssh/authorized_keys2" /dev/null 2>&1
-        if [ $? != 0 ]; then
-            echo -e "\n`cat \"$Z\"`\n" >> "/home/$1/.ssh/authorized_keys2" || end_script "($?) Can't append public key in user auth file" $LINENO
+    elif [ -x "`which yum 2>/dev/null`" ]; then
+        if [ -z "$DRY_RUN" ]; then
+            local ARCH="`([ \"$ARCH\" == \"32\" ] && echo 'x86') || [ \"$ARCH\" == \"64\" ] && echo 'amd64'`"
+            echo -e "$YUM_CONTENT" | sed "s/%MDB_VERSION%/$MDB_VERSION/g" | sed "s/%MDB_OS_NAME%/$CURRENT_OS_NAME/g" | sed "s/%MDB_OS_VERSION%/$(echo \"$CURRENT_OS_VERSION\" | cut -d. -f1)/g" | sed "s/%MDB_OS_ARCH%/$ARCH/g" > "$YUM_FILE"
+            [ $? != 0 ] && LAST_ERROR="Can't write YUM file" && return $LINENO
         fi
-
-        echo -n "."
-        grep "`cat \"$Z\" | sed 's/^[ ]//g' | sed 's/[ ]$//g'`" "$HOME/.ssh/authorized_keys2" /dev/null 2>&1
-        if [ $? != 0 ]; then
-            echo -e "\n`cat \"$Z\"`\n" >> "$HOME/.ssh/authorized_keys2" || end_script "($?) Can't append public key in root auth file" $LINENO
-        fi
+    else
+        LAST_ERROR="Can't find apt-get or yum... Buggy ?"
+        return $LINENO
     fi
     # ---
 
-    echo -n " "
     return 0
 }
 
@@ -210,71 +196,24 @@ write_finished_file() {
 check_sanity || end_script "$LAST_ERROR" $?
 # ---
 
-# Check if sudo and wget exists
-if [ -z "$SUDO" ] || [ -z "`which wget`" ] || [ -z "$HOME" ]; then
-    echo -e "This script requires your system to have 'sudo' and 'wget',\nplease install them."
-    exit $LINENO
-fi
+# Init OS info
+init_os_info || end_script "$LAST_ERROR" $?
 # ---
 
-# Hostname
-if [ -z "$1" ]; then
-    echo -en "Enter the desired hostname (FQDN)\nwithout trailing dot [$HOSTNAME]: "
-    read host
-    [ -z "$host" ] && host=$HOSTNAME
-    echo
-else
-    host=$1
-fi
-echo -n "Hostname: "
-set_hostname $host
-[ $? == 0 ] && echo "OK" || echo "KO"
+# Select MariaDB Version
+select_maria_version
 # ---
 
-# Create users
-echo "Creating users as sudoers:"
-for (( i=0; i<${#SUDOERS[@]}; i++ )); do
-    new_user_as_sudo "${SUDOERS[$i]}" "${PUB_KEYS[$i]}"
-    [ $? == 0 ] && echo "OK" || echo "KO"
-done
-# ---
-
-# Lock root
-echo -n "Locking root account: "
-echo -n "."
-if [ -z "$DRY_RUN" ]; then
-    usermod -L "root" > /dev/null 2>&1
-else
-    true
-fi
-Z=$?
-[ $Z == 0 ] || end_script "($Z) Can't lock root" $LINENO
-echo " OK"
-# ---
-
-# Set PermitRootLogin to "without-password"
-echo -n "Allowing root login with pubkey only: "
-echo -n "."
-if [ -z "$DRY_RUN" ]; then
-    Z=`tempfile` > /dev/null 2>&1 || end_script "($?) Can't create temp file for root login" $LINENO
-    echo -n "."
-    cp "$SSHD_CONF" "$Z" > /dev/null 2>&1 || end_script "($?) Can't copy temp file for root login" $LINENO
-    echo -n "."
-    cat "$Z" | sed "s/PermitRootLogin.*$/PermitRootLogin\twithout-password/g" | sed "s/PubkeyAuthentication.*/PubkeyAuthentication\tyes/g" > "$SSHD_CONF"
-    echo -n "."
-else
-    true
-fi
-[ $? != 0 ] && end_script "($?) Can't rewrite sshd_config file" $LINENO
-echo " OK"
+# Write repo file
+write_repo_file || end_script "$LAST_ERROR" $?
 # ---
 
 # Create setup finished file
 echo -n "Finishing setup: "
 echo -n "."
-write_finished_file || end_script $LAST_ERROR $LINENO
+write_finished_file || end_script "$LAST_ERROR" $LINENO
 echo " OK"
 # ---
 
-echo "Server correctly set-up, congratulations !"
+echo "MariaDB correctly set-up, congratulations !"
 exit 0
