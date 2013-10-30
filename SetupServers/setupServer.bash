@@ -223,16 +223,16 @@ new_user_as_sudo() { # (string username)
     if [ -z "$DRY_RUN" ]; then
         Z=$(tempfile) || end_script "($?) Can't create tempfile" $LINENO
         wget -qO- "$2" > "$Z" || end_script "($?) Can't download pub key" $LINENO
-        ssh-keygen -l -f "$Z" > /dev/null 2>&1 || rm "$Z" || end_script "($?) Not a valid pub key" $LINENO
+        ssh-keygen -l -f "$Z" > /dev/null 2>&1 || (rm "$Z" && end_script "($?) Not a valid pub key" $LINENO)
 
         echo -n "."
-        grep "`cat \"$Z\" | sed 's/^[ ]//g' | sed 's/[ ]$//g'`" "/home/$1/.ssh/authorized_keys2" /dev/null 2>&1
+        grep "`cat \"$Z\" | sed 's/^[ ]//g' | sed 's/[ ]$//g'`" "/home/$1/.ssh/authorized_keys2" > /dev/null 2>&1
         if [ $? != 0 ]; then
             echo -e "\n`cat \"$Z\"`\n" >> "/home/$1/.ssh/authorized_keys2" || end_script "($?) Can't append public key in user auth file" $LINENO
         fi
 
         echo -n "."
-        grep "`cat \"$Z\" | sed 's/^[ ]//g' | sed 's/[ ]$//g'`" "$HOME/.ssh/authorized_keys2" /dev/null 2>&1
+        grep "`cat \"$Z\" | sed 's/^[ ]//g' | sed 's/[ ]$//g'`" "$HOME/.ssh/authorized_keys2" > /dev/null 2>&1
         if [ $? != 0 ]; then
             echo -e "\n`cat \"$Z\"`\n" >> "$HOME/.ssh/authorized_keys2" || end_script "($?) Can't append public key in root auth file" $LINENO
         fi
