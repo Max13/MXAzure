@@ -27,7 +27,8 @@ SUDOERS_FILE="/etc/sudoers"
 SYS_USERS=(`cat "/etc/passwd" | cut -d: -f1 | tr "\n" " "`)
 
 # Positionnal parameters
-[ -z "`which getopts`" ] && echo -e '"getopts" utility required... :/\n' >&2 && exit 1
+getopts >/dev/null 2>&1
+[ $? == 127 ]&& echo -e '"getopts" utility required... :/\n' >&2 && exit 1
 while getopts ":a:hu:vz" opt; do
     case $opt in
         a)
