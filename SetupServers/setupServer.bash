@@ -203,19 +203,19 @@ new_user_as_sudo() { # (string username)
     # Create user and root authorized file
     echo -n "."
     if [ -z "$DRY_RUN" ]; then
-        sudo -Hu "$1" touch -p "/home/$1/.ssh/authorized_keys2"
+        sudo -Hu "$1" touch "/home/$1/.ssh/authorized_keys2"
     else
         true
     fi
-    [ $? != 0 ] && end_script "Can't touch user authorized_keys2 file"
+    [ $? != 0 ] && end_script "Can't touch user authorized_keys2 file" $LINENO
 
     echo -n "."
     if [ -z "$DRY_RUN" ]; then
-        touch -p "$HOME/.ssh/authorized_keys2"
+        touch "$HOME/.ssh/authorized_keys2"
     else
         true
     fi
-    [ $? != 0 ] && end_script "Can't touch root authorized_keys2 file"
+    [ $? != 0 ] && end_script "Can't touch root authorized_keys2 file" $LINENO
     # ---
 
     # Download and write pub key
