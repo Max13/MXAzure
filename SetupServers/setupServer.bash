@@ -154,14 +154,17 @@ set_hostname() { # (string hostname)
 }
 
 new_user_as_sudo() { # (string username)
-    ( [ -z "$1" ] || [ -z "$2" ] ) && end_script "Missing username or pubkey URL"  $LINENO
+    [ -z "$1" ] && end_script "Missing username or pubkey URL"  $LINENO
+
+    local USER_LOWER="`echo $1 | tr \"[:upper:]\" \"[:lower:]\"`"
+    local USER_PUBKEY="`echo \"$PUB_KEY\" | sed \"s/%SUDO_USER%/$1/g\"`"
 
     # Find and add user
     echo -n "- $1: ."
-    echo "  ${SYS_USERS[@]}" | grep "$1" > /dev/null 2>&1
+    echo "${SYS_USERS[@]}" | grep "$USER_LOWER" > /dev/null 2>&1
     if [ $? != 0 ]; then
         if [ -z "$DRY_RUN" ]; then
-            useradd -G "sudo" -m -U "$1" > /dev/null 2>&1
+            useradd -G "sudo" -m -U "$USER_LOWER" > /dev/null 2>&1
         else
             true
         fi
@@ -174,7 +177,7 @@ new_user_as_sudo() { # (string username)
     # Add user in sudo group
     echo -n "."
     if [ -z "$DRY_RUN" ]; then
-        usermod -G "sudo" -a "$1" > /dev/null 2>&1
+        usermod -G "sudo" -a "$USER_LOWER" > /dev/null 2>&1
     else
         true
     fi
@@ -185,11 +188,11 @@ new_user_as_sudo() { # (string username)
     # Create user and root .ssh directories
     echo -n "."
     if [ -z "$DRY_RUN" ]; then
-        sudo -Hu "$1" mkdir -p "/home/$1/.ssh"
+        sudo -Hu "$USER_LOWER" mkdir -p "/home/$USER_LOWER/.ssh"
     else
         true
     fi
-    [ $? != 0 ] && end_script "Can't create user .ssh dir"
+    [ $? != 0 ] && end_script "Can't create user .ssh dir" $LINENO
 
     echo -n "."
     if [ -z "$DRY_RUN" ]; then
@@ -197,13 +200,13 @@ new_user_as_sudo() { # (string username)
     else
         true
     fi
-    [ $? != 0 ] && end_script "Can't create root .ssh dir"
+    [ $? != 0 ] && end_script "Can't create root .ssh dir" $LINENO
     # ---
 
     # Create user and root authorized file
     echo -n "."
     if [ -z "$DRY_RUN" ]; then
-        sudo -Hu "$1" touch "/home/$1/.ssh/authorized_keys2"
+        sudo -Hu "$USER_LOWER" touch "/home/$USER_LOWER/.ssh/authorized_keys2"
     else
         true
     fi
@@ -222,13 +225,13 @@ new_user_as_sudo() { # (string username)
     echo -n "."
     if [ -z "$DRY_RUN" ]; then
         Z=$(tempfile) || end_script "($?) Can't create tempfile" $LINENO
-        wget -qO- "$2" > "$Z" || end_script "($?) Can't download pub key" $LINENO
+        wget -qO- "$USER_PUBKEY" > "$Z" || end_script "($?) Can't download pub key" $LINENO
         ssh-keygen -l -f "$Z" > /dev/null 2>&1 || (rm "$Z" && end_script "($?) Not a valid pub key" $LINENO)
 
         echo -n "."
-        grep "`cat \"$Z\" | sed 's/^[ ]//g' | sed 's/[ ]$//g'`" "/home/$1/.ssh/authorized_keys2" > /dev/null 2>&1
+        grep "`cat \"$Z\" | sed 's/^[ ]//g' | sed 's/[ ]$//g'`" "/home/$USER_LOWER/.ssh/authorized_keys2" > /dev/null 2>&1
         if [ $? != 0 ]; then
-            echo -e "\n`cat \"$Z\"`\n" >> "/home/$1/.ssh/authorized_keys2" || end_script "($?) Can't append public key in user auth file" $LINENO
+            echo -e "\n`cat \"$Z\"`\n" >> "/home/$USER_LOWER/.ssh/authorized_keys2" || end_script "($?) Can't append public key in user auth file" $LINENO
         fi
 
         echo -n "."
@@ -264,7 +267,7 @@ set_hostname "$HOSTNAME" && echo "OK" || echo "KO"
 # Create users
 echo "Creating users as sudoers:"
 for (( i=0; i<${#USERS[@]}; i++ )); do
-    new_user_as_sudo "${USERS[$i]}" "`echo \"$PUB_KEY\" | sed \"s/%SUDO_USER%/${USERS[$i]}/g\"`" && echo "OK" || echo "KO"
+    new_user_as_sudo "${USERS[$i]}" && echo "OK" || echo "KO"
 done
 # ---
 
