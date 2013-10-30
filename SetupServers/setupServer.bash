@@ -10,26 +10,65 @@
 # 5) Create temp file to know general setup as been finished
 # 6) END OK
 
-DRY_RUN=1
+DRY_RUN=
+HOSTNAME=
 LAST_ERROR=
-VERBOSE=1
+USERS=()
+VERBOSE=
 Z=
 
-HOSTNAME="`hostname`"
-PUB_KEYS=("https://raw.github.com/Max13/Max13/master/Max13.pub")
+CURRENT_HOSTNAME="`hostname`"
+PUB_KEY="https://raw.github.com/%SUDO_USER%/%SUDO_USER%/master/%SUDO_USER%.pub"
 SETUP_FILE=".MXGeneralSetup"
 SSHD_CONF="/etc/ssh/sshd_config"
-SUDO="`which sudo`"
-SUDOERS=("max13")
+# SUDO="`which sudo`"
+# SUDOERS=("max13")
 SUDOERS_FILE="/etc/sudoers"
 SYS_USERS=(`cat "/etc/passwd" | cut -d: -f1 | tr "\n" " "`)
 
-# Help
-if [ "$1" == "-h" ] || [ "$1" == "--help" ]; then
-    echo "Usage: `basename $0` [-h | --help] [hostname]"
-    echo
-    exit 0
-fi
+# Positionnal parameters
+[ -z "`which getopts`" ] && echo -e '"getopts" utility required... :/\n' >&2 && exit 1
+while getopts ":a:hu:vz" opt; do
+    case $opt in
+        a)
+            HOSTNAME="$OPTARG"
+            ;;
+        h)
+            echo "Usage: `basename $0` -a <hostname> -u <username> [-hz]" >&2
+            echo >&2
+            echo "  -a <hostname>" >&2
+            echo "              Set the hostname instead of prompting it" >&2
+            echo
+            echo "  -h          Show this help message" >&2
+            echo
+            echo "  -u <username>" >&2
+            echo "              Create user and add to sudoers." >&2
+            echo "              This option can be added more than one if multiple users." >&2
+            echo "              The public key must be in a Github repo as:" >&2
+            echo "              'username/username' as a file named 'username.pub'" >&2
+            echo "              (Case sensitive, system username will always be lowercase)" >&2
+            echo
+            echo "  -v          Verbose mode"
+            echo
+            echo "  -z          Dry run mode (No system modification)" >&2
+            echo
+            exit 0
+            ;;
+        u)
+            USERS+=("$OPTARG")
+            ;;
+        v)
+            VERBOSE=1
+            ;;
+        z)
+            DRY_RUN=1
+            ;;
+        \?)
+            echo "Invalid option: -$OPTARG" >&2
+            exit 1
+            ;;
+    esac
+done
 # ---
 
 # Greetings
@@ -43,11 +82,13 @@ end_script() { # (string error)
     if [ -n "$VERBOSE" ]; then
         echo -en "\n\t" # echo -en "\nLast error: "
         if [ -z "$1" ]; then
-            echo -e "$LAST_ERROR"
+            echo -e "$LAST_ERROR" >&2
         else
-            echo -e "$1"
+            echo -e "$1" >&2
         fi
     fi
+
+    echo "Error"
 
     if [ -z $2 ]; then
         exit $LINENO
@@ -62,9 +103,15 @@ check_sanity() {
     [ -n "$SUDO_USER" ] && [ "$HOME" == "`sudo -Hu \"$SUDO_USER\" env | grep HOME | sed \"s/HOME=//\"`" ] && LAST_ERROR="Wrong \$HOME path\nIt seems you didn't invoke sudo with the \"-H\" option...\nYou silly !" && return $LINENO
     # ---
 
+    # Check parameters presence
+    [ -z "$HOSTNAME" ] && LAST_ERROR="You must specify a hostname" && return $LINENO
+    [ ${#USERS[@]} == 0 ] && LAST_ERROR="You must specify at one sudoer" && return $LINENO
+    # ---
+
     # Check env
     [ -z "$HOME" ] && LAST_ERROR="Missing '$HOME' env variable." && return $LINENO
     [ -z "`which sudo`" ] && LAST_ERROR="Missing sudo excecutable,\nmake sure it's installed." && return $LINENO
+    [ -z "`which wget`" ] && LAST_ERROR="Missing wget excecutable,\nmake sure it's installed." && return $LINENO
     # ---
 
     # Check if already set-up
@@ -105,12 +152,12 @@ set_hostname() { # (string hostname)
     return 0
 }
 
-new_user_as_sudo() { # (string username, string pubkey-url)
+new_user_as_sudo() { # (string username)
     ( [ -z "$1" ] || [ -z "$2" ] ) && end_script "Missing username or pubkey URL"  $LINENO
 
     # Find and add user
     echo -n "- $1: ."
-    echo "${SYS_USERS[@]}" | grep "$1" > /dev/null 2>&1
+    echo "  ${SYS_USERS[@]}" | grep "$1" > /dev/null 2>&1
     if [ $? != 0 ]; then
         if [ -z "$DRY_RUN" ]; then
             useradd -G "sudo" -m -U "$1" > /dev/null 2>&1
@@ -126,7 +173,7 @@ new_user_as_sudo() { # (string username, string pubkey-url)
     # Add user in sudo group
     echo -n "."
     if [ -z "$DRY_RUN" ]; then
-        usermod -G "sudo" -a "$SUDOERS[$i]" > /dev/null 2>&1
+        usermod -G "sudo" -a "$1" > /dev/null 2>&1
     else
         true
     fi
@@ -208,32 +255,15 @@ write_finished_file() {
 check_sanity || end_script "$LAST_ERROR" $?
 # ---
 
-# Check if sudo and wget exists
-if [ -z "$SUDO" ] || [ -z "`which wget`" ] || [ -z "$HOME" ]; then
-    echo -e "This script requires your system to have 'sudo' and 'wget',\nplease install them."
-    exit $LINENO
-fi
-# ---
-
 # Hostname
-if [ -z "$1" ]; then
-    echo -en "Enter the desired hostname (FQDN)\nwithout trailing dot [$HOSTNAME]: "
-    read host
-    [ -z "$host" ] && host=$HOSTNAME
-    echo
-else
-    host=$1
-fi
-echo -n "Hostname: "
-set_hostname $host
-[ $? == 0 ] && echo "OK" || echo "KO"
+echo -n "Setting up hostname: "
+set_hostname "$HOSTNAME" && echo "OK" || echo "KO"
 # ---
 
 # Create users
 echo "Creating users as sudoers:"
-for (( i=0; i<${#SUDOERS[@]}; i++ )); do
-    new_user_as_sudo "${SUDOERS[$i]}" "${PUB_KEYS[$i]}"
-    [ $? == 0 ] && echo "OK" || echo "KO"
+for (( i=0; i<${#USERS[@]}; i++ )); do
+    new_user_as_sudo "${USERS[$i]}" "`echo \"$PUB_KEY\" | sed \"s/%SUDO_USER%/${USERS[$i]}/g\"`" && echo "OK" || echo "KO"
 done
 # ---
 
@@ -270,9 +300,9 @@ echo " OK"
 # Create setup finished file
 echo -n "Finishing setup: "
 echo -n "."
-write_finished_file || end_script $LAST_ERROR $LINENO
+write_finished_file || end_script "$LAST_ERROR" $LINENO
 echo " OK"
 # ---
 
-echo "Server correctly set-up, congratulations !"
+echo -e "Server correctly set-up, congratulations !\n"
 exit 0
