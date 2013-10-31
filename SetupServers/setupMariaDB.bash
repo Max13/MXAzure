@@ -10,10 +10,11 @@
 # 5) Print package names
 # 6) END OK
 
-DRY_RUN=1
-LAST_ERROR=
+DRY_RUN=
+HOSTNAME=
 LSB_RELEASE="`which lsb_release 2>/dev/null`"
-VERBOSE=1
+USERS=()
+VERBOSE=
 Z=
 
 SETUP_FILE=".MXMariaDBSetup"
@@ -31,25 +32,44 @@ CURRENT_OS_VERSION=
 CURRENT_OS_ARCH=
 MDB_VERSION=
 
-# Help
-if [ "$1" == "-h" ] || [ "$1" == "--help" ]; then
-    echo -e "\tUsage: `basename $0` [-h | --help | -l]"
-    echo
-    echo -e "\t-l\tList supported OS"
-    echo
-    exit 0
-fi
-# ---
-
-# List
-if [ "$1" == "-l" ]; then
-    echo "Supported OS:"
-    for (( i=0, n=${#SUPPORTED_OS[@]}; i<$n; i++ )); do
-        echo -e "\t- ${SUPPORTED_OS[$i]}"
-    done
-    echo
-    exit 0
-fi
+# Positionnal parameters
+getopts >/dev/null 2>&1
+[ $? == 127 ] && echo -e '"getopts" utility required... :/\n' >&2 && exit 1
+while getopts ":hlvz" opt; do
+    case $opt in
+        h)
+            echo "Usage: `basename $0` [-hlvz]" >&2
+            echo >&2
+            echo "  -h      Show this help message" >&2
+            echo >&2
+            echo "  -l      List supported OS" >&2
+            echo >&2
+            echo "  -v      Verbose mode"
+            echo >&2
+            echo "  -z      Dry run mode (No system modification)" >&2
+            echo >&2
+            exit 1
+            ;;
+        l)
+            echo "Supported OS:"
+            for (( i=0, n=${#SUPPORTED_OS[@]}; i<$n; i++ )); do
+                echo -e "\t- ${SUPPORTED_OS[$i]}"
+            done
+            echo
+            exit 0
+            ;;
+        v)
+            VERBOSE=1
+            ;;
+        z)
+            DRY_RUN=1
+            ;;
+        \?)
+            echo "Invalid option: -$OPTARG" >&2
+            exit 1
+            ;;
+    esac
+done
 # ---
 
 # Greetings
@@ -167,12 +187,14 @@ write_repo_file() {
             echo -e "$APT_CONTENT" | sed "s/%MDB_VERSION%/$MDB_VERSION/g" | sed "s/%MDB_OS_NAME%/$CURRENT_OS_NAME/g" | sed "s/%MDB_OS_CODENAME%/$CURRENT_OS_CODENAME/g" > "$APT_FILE"
             [ $? != 0 ] && LAST_ERROR="Can't write APT file" && return $LINENO
             ($APT_GPG_CMD > /dev/null 2>&1) || (LAST_ERROR="Can't add GPG key" && return $LINENO)
+            Z="To install MariaDB with apt-get, please check this page:\n\thttps://mariadb.com/kb/en/installing-mariadb-deb-files/#installing-mariadb-with-apt-get\n"
         fi
     elif [ -x "`which yum 2>/dev/null`" ]; then
         if [ -z "$DRY_RUN" ]; then
             local ARCH="`([ \"$ARCH\" == \"32\" ] && echo 'x86') || [ \"$ARCH\" == \"64\" ] && echo 'amd64'`"
             echo -e "$YUM_CONTENT" | sed "s/%MDB_VERSION%/$MDB_VERSION/g" | sed "s/%MDB_OS_NAME%/$CURRENT_OS_NAME/g" | sed "s/%MDB_OS_VERSION%/$(echo \"$CURRENT_OS_VERSION\" | cut -d. -f1)/g" | sed "s/%MDB_OS_ARCH%/$ARCH/g" > "$YUM_FILE"
             [ $? != 0 ] && LAST_ERROR="Can't write YUM file" && return $LINENO
+            Z="To install MariaDB with yum, please check this page:\n\thttps://mariadb.com/kb/en/installing-mariadb-with-yum/#installing-mariadb-with-yum\n"
         fi
     else
         LAST_ERROR="Can't find apt-get or yum... Buggy ?"
@@ -215,5 +237,6 @@ write_finished_file || end_script "$LAST_ERROR" $LINENO
 echo " OK"
 # ---
 
-echo "MariaDB correctly set-up, congratulations !"
+echo "MariaDB repositories correctly set-up, congratulations !"
+echo -e "$Z"
 exit 0
