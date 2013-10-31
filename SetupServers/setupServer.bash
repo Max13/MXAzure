@@ -21,14 +21,12 @@ CURRENT_HOSTNAME="`hostname`"
 PUB_KEY="https://raw.github.com/%SUDO_USER%/%SUDO_USER%/master/%SUDO_USER%.pub"
 SETUP_FILE=".MXGeneralSetup"
 SSHD_CONF="/etc/ssh/sshd_config"
-# SUDO="`which sudo`"
-# SUDOERS=("max13")
 SUDOERS_FILE="/etc/sudoers"
 SYS_USERS=(`cat "/etc/passwd" | cut -d: -f1 | tr "\n" " "`)
 
 # Positionnal parameters
 getopts >/dev/null 2>&1
-[ $? == 127 ]&& echo -e '"getopts" utility required... :/\n' >&2 && exit 1
+[ $? == 127 ] && echo -e '"getopts" utility required... :/\n' >&2 && exit 1
 while getopts ":a:hu:vz" opt; do
     case $opt in
         a)
@@ -39,21 +37,21 @@ while getopts ":a:hu:vz" opt; do
             echo >&2
             echo "  -a <hostname>" >&2
             echo "              Set the hostname instead of prompting it" >&2
-            echo
+            echo >&2
             echo "  -h          Show this help message" >&2
-            echo
+            echo >&2
             echo "  -u <username>" >&2
             echo "              Create user and add to sudoers." >&2
             echo "              This option can be added more than one if multiple users." >&2
             echo "              The public key must be in a Github repo as:" >&2
             echo "              'username/username' as a file named 'username.pub'" >&2
             echo "              (Case sensitive, system username will always be lowercase)" >&2
-            echo
+            echo >&2
             echo "  -v          Verbose mode"
-            echo
+            echo >&2
             echo "  -z          Dry run mode (No system modification)" >&2
-            echo
-            exit 0
+            echo >&2
+            exit 1
             ;;
         u)
             USERS+=("$OPTARG")
