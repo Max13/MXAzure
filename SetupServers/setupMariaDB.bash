@@ -13,7 +13,6 @@
 DRY_RUN=
 HOSTNAME=
 LSB_RELEASE="`which lsb_release 2>/dev/null`"
-USERS=()
 VERBOSE=
 Z=
 
